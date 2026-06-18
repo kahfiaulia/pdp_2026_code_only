@@ -67,28 +67,16 @@ PRETRAINED = True           # Gunakan pretrained ImageNet weights
 # ============================================================
 # HYPERPARAMETER TRAINING
 # ============================================================
-IMG_SIZE = 300              # Resolusi input untuk backbone ImageNet pretrained
-BATCH_SIZE = 8              # Kurangi jika kehabisan memori GPU/RAM
+IMG_SIZE = 384              # Resolusi input (384x384 piksel, lebih baik untuk deteksi lesi kecil)
+BATCH_SIZE = 8              # Kurangi jika kehabisan memori GPU/RAM (dikurangi karena resolusi lebih besar)
 NUM_WORKERS = 0            # Jumlah worker untuk data loading (kurangi di Windows jika error)
-EPOCHS = 30                 # Jumlah epoch training
+EPOCHS = 20                 # Jumlah epoch training
 WARMUP_EPOCHS = 3           # Epoch warmup sebelum cosine annealing (stabilisasi transfer learning)
-FREEZE_EPOCHS = 3           # Jumlah epoch pertama di mana backbone di-freeze
+FREEZE_EPOCHS = 3           # Jumlah epoch pertama di mana backbone MViTv2 di-freeze
 LEARNING_RATE = 1e-4        # Learning rate awal
 WEIGHT_DECAY = 1e-4         # Weight decay untuk AdamW
-PATIENCE = 10               # Early stopping patience
+PATIENCE = 7                # Early stopping patience
 MIN_DELTA = 1e-4            # Minimum improvement untuk early stopping
-
-# ============================================================
-# QWK & LOSS STRATEGY
-# ============================================================
-USE_SOFT_QWK = True         # Gunakan Soft QWK loss selama training
-QWK_LOSS_WEIGHT = 0.35      # Bobot loss QWK setelah warmup
-QWK_WARMUP_EPOCHS = 5       # Epoch sebelum mulai mengombinasikan QWK loss
-
-# ============================================================
-# DEFAULT BACKBONE MODEL
-# ============================================================
-MODEL_NAME = "mvitv2_tiny"  # Opsi: mvitv2_tiny, mvitv2_small, mvitv2_base
 
 # ============================================================
 # MIXED PRECISION TRAINING

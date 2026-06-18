@@ -13,7 +13,6 @@ import os
 import random
 import numpy as np
 import torch
-import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
@@ -40,7 +39,7 @@ def set_seed(seed=42):
 
 
 def save_checkpoint(model, optimizer, scheduler, epoch, val_loss, 
-                    val_accuracy, filepath, val_qwk=None):
+                    val_accuracy, filepath):
     """
     Simpan model checkpoint.
     
@@ -52,7 +51,6 @@ def save_checkpoint(model, optimizer, scheduler, epoch, val_loss,
         val_loss (float): Validation loss
         val_accuracy (float): Validation accuracy
         filepath (str): Path untuk menyimpan checkpoint
-        val_qwk (float, optional): Validation QWK score
     """
     checkpoint = {
         "epoch": epoch,
@@ -61,14 +59,11 @@ def save_checkpoint(model, optimizer, scheduler, epoch, val_loss,
         "scheduler_state_dict": scheduler.state_dict() if scheduler else None,
         "val_loss": val_loss,
         "val_accuracy": val_accuracy,
-        "val_qwk": val_qwk,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     
     torch.save(checkpoint, filepath)
     print(f"[CHECKPOINT] Saved: {filepath}")
-    if val_qwk is not None:
-        print(f"[CHECKPOINT] Val QWK: {val_qwk:.4f}")
 
 
 def load_checkpoint(filepath, model, optimizer=None, scheduler=None, device="cpu"):
@@ -156,30 +151,24 @@ class MetricsTracker:
         self.val_losses = []
         self.train_accuracies = []
         self.val_accuracies = []
-        self.train_qwks = []
-        self.val_qwks = []
         self.learning_rates = []
     
-    def update(self, train_loss, val_loss, train_acc, val_acc, train_qwk, val_qwk, lr):
+    def update(self, train_loss, val_loss, train_acc, val_acc, lr):
         self.train_losses.append(float(train_loss))
         self.val_losses.append(float(val_loss))
         self.train_accuracies.append(float(train_acc))
         self.val_accuracies.append(float(val_acc))
-        self.train_qwks.append(float(train_qwk))
-        self.val_qwks.append(float(val_qwk))
         self.learning_rates.append(float(lr))
     
     def get_best_epoch(self):
-        """Mendapatkan epoch dengan validation QWK tertinggi."""
-        best_idx = int(np.argmax(self.val_qwks))
+        """Mendapatkan epoch dengan validation loss terendah."""
+        best_idx = int(np.argmin(self.val_losses))
         return {
             "epoch": best_idx + 1,
             "val_accuracy": float(self.val_accuracies[best_idx]),
             "val_loss": float(self.val_losses[best_idx]),
-            "val_qwk": float(self.val_qwks[best_idx]),
             "train_accuracy": float(self.train_accuracies[best_idx]),
-            "train_loss": float(self.train_losses[best_idx]),
-            "train_qwk": float(self.train_qwks[best_idx])
+            "train_loss": float(self.train_losses[best_idx])
         }
 
 
@@ -191,7 +180,7 @@ def plot_training_curves(metrics_tracker, save_path):
         metrics_tracker (MetricsTracker): Objek tracker metrik
         save_path (str): Path untuk menyimpan plot
     """
-    fig, axes = plt.subplots(1, 4, figsize=(24, 6))
+    fig, axes = plt.subplots(1, 3, figsize=(20, 6))
     
     epochs = range(1, len(metrics_tracker.train_losses) + 1)
     
@@ -217,24 +206,13 @@ def plot_training_curves(metrics_tracker, save_path):
     axes[1].legend()
     axes[1].grid(True, alpha=0.3)
     
-    # Plot QWK
-    axes[2].plot(epochs, metrics_tracker.train_qwks, 'b-o', 
-                 label='Training QWK', markersize=3)
-    axes[2].plot(epochs, metrics_tracker.val_qwks, 'r-o', 
-                 label='Validation QWK', markersize=3)
-    axes[2].set_xlabel('Epoch')
-    axes[2].set_ylabel('QWK')
-    axes[2].set_title('Training & Validation QWK')
-    axes[2].legend()
-    axes[2].grid(True, alpha=0.3)
-    
     # Plot Learning Rate
-    axes[3].plot(epochs, metrics_tracker.learning_rates, 'g-o', markersize=3)
-    axes[3].set_xlabel('Epoch')
-    axes[3].set_ylabel('Learning Rate')
-    axes[3].set_title('Learning Rate Schedule')
-    axes[3].grid(True, alpha=0.3)
-    axes[3].ticklabel_format(style='scientific', axis='y', scilimits=(0,0))
+    axes[2].plot(epochs, metrics_tracker.learning_rates, 'g-o', markersize=3)
+    axes[2].set_xlabel('Epoch')
+    axes[2].set_ylabel('Learning Rate')
+    axes[2].set_title('Learning Rate Schedule')
+    axes[2].grid(True, alpha=0.3)
+    axes[2].ticklabel_format(style='scientific', axis='y', scilimits=(0,0))
     
     plt.suptitle('MViTv2 - Training Curves', fontsize=14, fontweight='bold')
     plt.tight_layout()
@@ -285,39 +263,6 @@ def plot_class_distribution(csv_file, class_names, save_path):
     plt.close()
     
     print(f"[PLOT] Class distribution saved: {save_path}")
-
-
-def soft_quadratic_weighted_kappa_loss(logits, targets, num_classes=5, eps=1e-10):
-    """
-    Soft QWK loss for ordinal multi-class classification.
-
-    Args:
-        logits (torch.Tensor): Logits shape [B, C]
-        targets (torch.Tensor): Integer labels shape [B]
-        num_classes (int): Jumlah kelas
-        eps (float): Stabilitas numerik
-
-    Returns:
-        torch.Tensor: Loss scalar
-    """
-    probs = F.softmax(logits, dim=1)
-    targets_onehot = F.one_hot(targets.long(), num_classes).float().to(probs.device)
-
-    O = targets_onehot.t() @ probs
-    O = O / (O.sum() + eps)
-
-    weights = torch.arange(num_classes, dtype=probs.dtype, device=probs.device)
-    weights = (weights[:, None] - weights[None, :]) ** 2
-    weights = weights / float((num_classes - 1) ** 2)
-
-    hist_true = targets_onehot.sum(dim=0).float() / (targets_onehot.shape[0] + eps)
-    hist_pred = probs.sum(dim=0).float() / (probs.shape[0] + eps)
-    E = hist_true[:, None] * hist_pred[None, :]
-
-    num = (weights * O).sum()
-    den = (weights * E).sum()
-    loss = num / (den + eps)
-    return loss
 
 
 def denormalize_image(tensor, mean=None, std=None):

@@ -1,0 +1,41 @@
+# ============================================================
+# Requirements for MViTv2 Diabetic Retinopathy Detection
+# ============================================================
+# Pilih SALAH SATU instalasi PyTorch di bawah ini:
+#
+# --- OPSI 1: GPU (CUDA 11.8) ---
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+#
+# --- OPSI 2: GPU (CUDA 12.1) ---
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+#
+# --- OPSI 3: CPU Only ---
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+#
+# Setelah instalasi PyTorch, jalankan:
+# pip install -r requirements.txt
+# ============================================================
+
+# Model & Pretrained Weights
+timm>=0.9.0
+
+# Explainability
+pytorch-grad-cam>=1.5.0
+captum>=0.7.0
+
+# Data & Image Processing
+pandas
+numpy
+Pillow
+opencv-python
+albumentations
+
+# Visualization
+matplotlib
+seaborn
+
+# Metrics
+scikit-learn
+
+# Utilities
+tqdm

@@ -297,16 +297,16 @@ def evaluate(checkpoint_path=None):
     accuracy = accuracy_score(y_true, y_pred)
     weighted_f1 = f1_score(y_true, y_pred, average='weighted')
     macro_f1 = f1_score(y_true, y_pred, average='macro')
-    kappa = cohen_kappa_score(y_true, y_pred, weights='quadratic')
+    qwk = cohen_kappa_score(y_true, y_pred, weights='quadratic')
     
     print_separator("CLASSIFICATION REPORT")
     print(report_text)
     
     print_separator("OVERALL METRICS")
-    print(f"  Accuracy:          {accuracy:.4f} ({accuracy*100:.2f}%)")
-    print(f"  Weighted F1-Score: {weighted_f1:.4f}")
-    print(f"  Macro F1-Score:    {macro_f1:.4f}")
-    print(f"  Cohen's Kappa (QWK): {kappa:.4f}")
+    print(f"  Accuracy:              {accuracy:.4f} ({accuracy*100:.2f}%)")
+    print(f"  Weighted F1-Score:     {weighted_f1:.4f}")
+    print(f"  Macro F1-Score:        {macro_f1:.4f}")
+    print(f"  Quadratic Weighted Kappa (QWK): {qwk:.4f}")
     
     # ========================================
     # 5. Visualizations
@@ -368,7 +368,7 @@ def evaluate(checkpoint_path=None):
         "accuracy": float(accuracy),
         "weighted_f1": float(weighted_f1),
         "macro_f1": float(macro_f1),
-        "cohens_kappa": float(kappa),
+        "quadratic_weighted_kappa": float(qwk),
         "per_class_auc": {name: float(a) for name, a in zip(CLASS_NAMES, auc_scores)},
         "mean_auc": float(np.mean(auc_scores)),
         "per_class_report": {name: report[name] for name in CLASS_NAMES}

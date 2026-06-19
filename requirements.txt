@@ -20,7 +20,7 @@
 timm>=0.9.0
 
 # Explainability
-pytorch-grad-cam>=1.5.0
+grad-cam>=1.5.0
 captum>=0.7.0
 
 # Data & Image Processing

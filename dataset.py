@@ -257,7 +257,7 @@ def compute_class_weights(csv_file):
     num_classes = len(class_counts)
     
     # Class-Balanced Loss formula
-    beta = 0.9999
+    beta = 0.95
     counts = np.array([class_counts.get(i, 1) for i in range(num_classes)])
     effective_num = 1.0 - np.power(beta, counts)
     weights = (1.0 - beta) / effective_num

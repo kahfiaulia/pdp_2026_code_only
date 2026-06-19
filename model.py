@@ -196,6 +196,8 @@ def load_model_for_inference(checkpoint_path, model_name="mvitv2_tiny",
         model.load_state_dict(checkpoint["model_state_dict"])
         print(f"[MODEL] Loaded checkpoint dari epoch {checkpoint.get('epoch', '?')}")
         print(f"[MODEL] Val accuracy: {checkpoint.get('val_accuracy', '?')}")
+        if checkpoint.get("val_qwk") is not None:
+            print(f"[MODEL] Val QWK: {checkpoint['val_qwk']:.4f}")
     else:
         model.load_state_dict(checkpoint)
     
@@ -203,7 +205,6 @@ def load_model_for_inference(checkpoint_path, model_name="mvitv2_tiny",
     model.eval()
     
     return model
-
 
 if __name__ == "__main__":
     """Test model creation."""

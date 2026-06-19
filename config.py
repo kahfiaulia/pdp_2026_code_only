@@ -79,6 +79,17 @@ PATIENCE = 7                # Early stopping patience
 MIN_DELTA = 1e-4            # Minimum improvement untuk early stopping
 
 # ============================================================
+# ORDINAL LOSS SETTINGS (OrdinalCrossEntropyLoss)
+# ============================================================
+# Dipakai untuk mengganti label_smoothing biasa dengan soft target
+# berbasis jarak ordinal + penalti regresi ordinal. Tujuannya menekan
+# kesalahan klasifikasi yang melompat jauh (mis. Moderate -> Proliferative)
+# karena QWK menghukum kesalahan tersebut secara kuadratik.
+LOSS_DISTANCE_POWER = 2.0      # 2.0 = penalti kuadratik (selaras dgn definisi QWK), coba 1.0/1.5 jika tidak stabil
+LOSS_SMOOTHING_STRENGTH = 0.1  # setara label_smoothing yang dipakai sebelumnya
+LOSS_ORDINAL_WEIGHT = 0.4      # bobot komponen regresi ordinal; mulai 0.4, tuning range 0.2-0.6
+
+# ============================================================
 # MIXED PRECISION TRAINING
 # ============================================================
 USE_AMP = True if DEVICE.type == "cuda" else False

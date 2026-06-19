@@ -18,13 +18,17 @@ import torch
 import torch.nn as nn
 from torch.amp import GradScaler, autocast
 from tqdm import tqdm
+from ordinal_loss import OrdinalCrossEntropyLoss
+from sklearn.metrics import cohen_kappa_score
 
 from config import (
     DEVICE, EPOCHS, LEARNING_RATE, WEIGHT_DECAY,
     PATIENCE, MIN_DELTA, USE_AMP, WARMUP_EPOCHS, FREEZE_EPOCHS,
     CHECKPOINT_DIR, PLOT_DIR, TRAIN_CSV,
-    MODEL_NAME, NUM_CLASSES, PRETRAINED, IMG_SIZE
+    MODEL_NAME, NUM_CLASSES, PRETRAINED, IMG_SIZE,
+    LOSS_DISTANCE_POWER, LOSS_SMOOTHING_STRENGTH, LOSS_ORDINAL_WEIGHT  # tambahan
 )
+
 from model import create_model
 from dataset import get_dataloaders, compute_class_weights
 from utils import (
@@ -101,43 +105,37 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device,
 
 
 def validate(model, dataloader, criterion, device):
-    """
-    Validasi model pada validation set.
-    
-    Args:
-        model: Model PyTorch
-        dataloader: Validation DataLoader
-        criterion: Loss function
-        device: Device
-    
-    Returns:
-        tuple: (average_loss, accuracy)
-    """
     model.eval()
-    
+
     running_loss = 0.0
     correct = 0
     total = 0
-    
+    all_preds = []
+    all_labels = []
+
     with torch.no_grad():
         pbar = tqdm(dataloader, desc="Validation", leave=False)
-        
+
         for images, labels in pbar:
             images = images.to(device)
             labels = labels.to(device)
-            
+
             outputs = model(images)
             loss = criterion(outputs, labels)
-            
+
             running_loss += loss.item() * images.size(0)
             _, predicted = torch.max(outputs, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
-    
+
+            all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+
     avg_loss = running_loss / total
     accuracy = 100.0 * correct / total
-    
-    return avg_loss, accuracy
+    qwk = cohen_kappa_score(all_labels, all_preds, weights="quadratic")
+
+    return avg_loss, accuracy, qwk
 
 
 def train(resume_checkpoint=None):
@@ -188,7 +186,13 @@ def train(resume_checkpoint=None):
     class_weights = compute_class_weights(TRAIN_CSV)
     class_weights = class_weights.to(DEVICE)
     
-    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
+    criterion = OrdinalCrossEntropyLoss(
+        num_classes=NUM_CLASSES,
+        class_weights=class_weights,
+        distance_power=LOSS_DISTANCE_POWER,
+        smoothing_strength=LOSS_SMOOTHING_STRENGTH,
+        ordinal_weight=LOSS_ORDINAL_WEIGHT,
+    ).to(DEVICE)
     
     # Differential Learning Rate: backbone pakai LR lebih kecil
     # karena sudah pretrained, sedangkan classifier head random init
@@ -255,7 +259,7 @@ def train(resume_checkpoint=None):
         )
         
         # Validation
-        val_loss, val_acc = validate(model, val_loader, criterion, DEVICE)
+        val_loss, val_acc, val_qwk = validate(model, val_loader, criterion, DEVICE)
         
         # Learning rate step
         current_lr = optimizer.param_groups[0]["lr"]
@@ -269,30 +273,29 @@ def train(resume_checkpoint=None):
         
         # Print progress
         print(f"Epoch [{epoch+1}/{EPOCHS}] "
-              f"| Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% "
-              f"| Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}% "
-              f"| LR: {current_lr:.2e} | Time: {epoch_time:.1f}s")
+          f"| Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% "
+          f"| Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}% | Val QWK: {val_qwk:.4f} "
+          f"| LR: {current_lr:.2e} | Time: {epoch_time:.1f}s")
         
         # Save best model
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            best_val_acc = val_acc
+        if val_qwk > best_val_qwk:
+            best_val_qwk = val_qwk
             save_checkpoint(
                 model, optimizer, scheduler, epoch + 1,
-                val_loss, val_acc,
+                val_loss, val_acc, val_qwk,
                 os.path.join(CHECKPOINT_DIR, "best_model.pth")
             )
-            print(f"  ★ New best model! Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%")
+            print(f"  ★ New best model! Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}% | Val QWK: {val_qwk:.4f}")
         
         # Save last checkpoint
         save_checkpoint(
             model, optimizer, scheduler, epoch + 1,
-            val_loss, val_acc,
+            val_loss, val_acc, val_qwk,
             os.path.join(CHECKPOINT_DIR, "last_checkpoint.pth")
         )
         
         # Early stopping check
-        if early_stopping(val_loss):
+        if early_stopping(val_qwk):
             print(f"\nEarly stopping at epoch {epoch+1}")
             break
     
@@ -305,6 +308,7 @@ def train(resume_checkpoint=None):
     print(f"Best Epoch: {best_info['epoch']}")
     print(f"Best Val Accuracy: {best_info['val_accuracy']:.2f}%")
     print(f"Best Val Loss: {best_info['val_loss']:.4f}")
+    print(f"Best Val QWK: {best_info['val_qwk']:.4f}")
     print(f"Best Train Accuracy: {best_info['train_accuracy']:.2f}%")
     print(f"Best Train Loss: {best_info['train_loss']:.4f}")
     
@@ -321,6 +325,7 @@ def train(resume_checkpoint=None):
         "val_losses": metrics.val_losses,
         "train_accuracies": metrics.train_accuracies,
         "val_accuracies": metrics.val_accuracies,
+        "val_qwks": metrics.val_qwks,
         "learning_rates": metrics.learning_rates,
         "best_epoch": best_info
     }

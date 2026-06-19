@@ -238,8 +238,9 @@ def train(resume_checkpoint=None):
     print("\n[4/5] Starting training...")
     print_separator()
     
-    best_val_acc = 0.0
-    best_val_loss = float("inf")
+    #best_val_acc = 0.0
+    #best_val_loss = float("inf")
+    best_val_qwk = 0.0
     
     for epoch in range(start_epoch, EPOCHS):
         epoch_start = time.time()

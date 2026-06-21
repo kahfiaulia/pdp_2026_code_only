@@ -79,8 +79,30 @@ PATIENCE = 7                # Early stopping patience
 MIN_DELTA = 1e-4            # Minimum improvement untuk early stopping
 
 # ============================================================
+# CLASS WEIGHT SETTINGS (compute_class_weights di dataset.py)
+# ============================================================
+# beta untuk formula Effective Number of Samples (Cui et al., 2019).
+# CATATAN: untuk dataset sekelas APTOS (n per kelas ~150-1500), beta harus
+# sangat mendekati 1 (mis. 0.9999) untuk dapat gradasi weight yang berarti.
+# beta=0.99 sudah memberi gradasi yang jauh lebih halus dari 0.9999 (cocok
+# dipakai bersamaan dengan WeightedRandomSampler agar tidak double-compensate),
+# tapi beta<=0.95 akan membuat SEMUA weight collapse ke ~1.0 (efek hilang total).
+CLASS_WEIGHT_BETA = 0.99
+
+# ============================================================
 # ORDINAL LOSS SETTINGS (OrdinalCrossEntropyLoss)
 # ============================================================
+# Dipakai untuk mengganti label_smoothing biasa dengan soft target
+# berbasis jarak ordinal + penalti regresi ordinal. Tujuannya menekan
+# kesalahan klasifikasi yang melompat jauh (mis. Moderate -> Proliferative)
+# karena QWK menghukum kesalahan tersebut secara kuadratik.
+LOSS_DISTANCE_POWER = 2.0      # 2.0 = penalti kuadratik (selaras dgn definisi QWK), coba 1.0/1.5 jika tidak stabil
+LOSS_SMOOTHING_STRENGTH = 0.1  # setara label_smoothing yang dipakai sebelumnya
+LOSS_ORDINAL_WEIGHT = 0.4      # bobot komponen regresi ordinal; mulai 0.4, tuning range 0.2-0.6
+# Karena dataloader sudah memakai WeightedRandomSampler (lihat dataset.py),
+# nonaktifkan weighting tambahan di komponen ordinal supaya tidak double
+# compensate dengan sampler. CE term tetap pakai class_weights seperti biasa.
+LOSS_ORDINAL_CLASS_WEIGHTED = False
 # Dipakai untuk mengganti label_smoothing biasa dengan soft target
 # berbasis jarak ordinal + penalti regresi ordinal. Tujuannya menekan
 # kesalahan klasifikasi yang melompat jauh (mis. Moderate -> Proliferative)

@@ -23,7 +23,8 @@ from config import (
     TRAIN_IMG_DIR, VAL_IMG_DIR, TEST_IMG_DIR,
     TRAIN_CSV, VAL_CSV, TEST_CSV,
     IMG_SIZE, BATCH_SIZE, NUM_WORKERS,
-    IMAGENET_MEAN, IMAGENET_STD, CLASS_NAMES
+    IMAGENET_MEAN, IMAGENET_STD, CLASS_NAMES,
+    CLASS_WEIGHT_BETA
 )
 from preprocessing import preprocess_fundus_image
 
@@ -236,16 +237,32 @@ def get_dataloaders():
     return train_loader, val_loader, test_loader
 
 
-def compute_class_weights(csv_file):
+def compute_class_weights(csv_file, beta=CLASS_WEIGHT_BETA):
     """
     Menghitung class weights untuk menangani class imbalance.
     
     Menggunakan Effective Number of Samples (Class-Balanced Loss, Cui et al., 2019):
     effective_num = 1.0 - beta^count
     weights = (1.0 - beta) / effective_num
+
+    CATATAN PENTING soal pemilihan beta:
+    Sensitivitas formula ini terhadap beta sangat tergantung skala n (jumlah sampel
+    per kelas). Untuk dataset sekelas APTOS (n berkisar ~150-1500), beta=0.9999
+    (default umum di literatur untuk dataset besar seperti ImageNet/iNaturalist)
+    menghasilkan weight dengan gradasi tajam (~0.2x - 2.0x). Begitu beta diturunkan
+    ke 0.99 ke bawah, beta^n untuk n>~150 sudah mendekati 0, sehingga SEMUA weight
+    collapse ke ~1.0 (efek weighting hilang total, bukan sekadar melemah).
+    
+    beta=0.99 adalah titik tengah yang masih punya gradasi berarti (~0.9x - 1.2x)
+    namun jauh lebih halus dari 0.9999 -- cocok dipakai bersamaan dengan
+    WeightedRandomSampler di get_dataloaders() supaya tidak terjadi double
+    compensation (sampler menangani exposure frequency, loss weight cukup jadi
+    penyeimbang ringan).
     
     Args:
         csv_file (str): Path ke CSV training data
+        beta (float): Parameter ENS, default 0.99 (lihat catatan di atas).
+            Gunakan 0.9999 jika TIDAK memakai WeightedRandomSampler di dataloader.
     
     Returns:
         torch.Tensor: Tensor class weights
@@ -257,7 +274,6 @@ def compute_class_weights(csv_file):
     num_classes = len(class_counts)
     
     # Class-Balanced Loss formula
-    beta = 0.95
     counts = np.array([class_counts.get(i, 1) for i in range(num_classes)])
     effective_num = 1.0 - np.power(beta, counts)
     weights = (1.0 - beta) / effective_num
@@ -267,7 +283,8 @@ def compute_class_weights(csv_file):
     
     weights_tensor = torch.FloatTensor(weights)
     
-    print(f"\n[CLASS WEIGHTS] Class distribution & weights:")
+    print(f"\n[CLASS WEIGHTS] beta={beta}")
+    print(f"[CLASS WEIGHTS] Class distribution & weights:")
     for i, (name, w) in enumerate(zip(CLASS_NAMES, weights)):
         count = class_counts.get(i, 0)
         print(f"  Kelas {i} ({name}): {count} samples, weight={w:.4f}")

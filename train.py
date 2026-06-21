@@ -3,11 +3,11 @@ train.py - Pipeline Training MViTv2
 Deteksi Retinopati Diabetik
 
 Fitur:
-- Training dengan class-weighted CrossEntropyLoss
+- Training dengan OrdinalCrossEntropyLoss (class-weighted + ordinal-aware)
 - AdamW optimizer + CosineAnnealingLR scheduler
 - Mixed Precision Training (AMP) - opsional untuk GPU
-- Early Stopping
-- Checkpoint saving (best model)
+- Early Stopping (berbasis Val QWK)
+- Checkpoint saving (best model berdasarkan Val QWK)
 - Metrics tracking & visualization
 """
 
@@ -26,7 +26,8 @@ from config import (
     PATIENCE, MIN_DELTA, USE_AMP, WARMUP_EPOCHS, FREEZE_EPOCHS,
     CHECKPOINT_DIR, PLOT_DIR, TRAIN_CSV,
     MODEL_NAME, NUM_CLASSES, PRETRAINED, IMG_SIZE,
-    LOSS_DISTANCE_POWER, LOSS_SMOOTHING_STRENGTH, LOSS_ORDINAL_WEIGHT  # tambahan
+    LOSS_DISTANCE_POWER, LOSS_SMOOTHING_STRENGTH, LOSS_ORDINAL_WEIGHT,
+    LOSS_ORDINAL_CLASS_WEIGHTED
 )
 
 from model import create_model
@@ -105,6 +106,12 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device,
 
 
 def validate(model, dataloader, criterion, device):
+    """
+    Validasi model pada validation set.
+
+    Returns:
+        tuple: (average_loss, accuracy, qwk)
+    """
     model.eval()
 
     running_loss = 0.0
@@ -192,6 +199,7 @@ def train(resume_checkpoint=None):
         distance_power=LOSS_DISTANCE_POWER,
         smoothing_strength=LOSS_SMOOTHING_STRENGTH,
         ordinal_weight=LOSS_ORDINAL_WEIGHT,
+        ordinal_class_weighted=LOSS_ORDINAL_CLASS_WEIGHTED,
     ).to(DEVICE)
     
     # Differential Learning Rate: backbone pakai LR lebih kecil
@@ -219,7 +227,9 @@ def train(resume_checkpoint=None):
     scaler = GradScaler("cuda") if USE_AMP else None
     
     # Early Stopping
-    early_stopping = EarlyStopping(patience=PATIENCE, min_delta=MIN_DELTA, mode="min")
+    # PENTING: mode="max" karena yang dipantau sekarang adalah Val QWK
+    # (semakin tinggi semakin baik), bukan val_loss seperti versi sebelumnya.
+    early_stopping = EarlyStopping(patience=PATIENCE, min_delta=MIN_DELTA, mode="max")
     
     # Metrics Tracker
     metrics = MetricsTracker()
@@ -238,9 +248,9 @@ def train(resume_checkpoint=None):
     print("\n[4/5] Starting training...")
     print_separator()
     
-    # best_val_acc = 0.0
-    # best_val_loss = float("inf")
-    best_val_qwk = -1.0
+    best_val_acc = 0.0
+    best_val_loss = float("inf")
+    best_val_qwk = 0.0  # FIX: harus diinisialisasi sebelum loop, sebelumnya tidak ada
     
     for epoch in range(start_epoch, EPOCHS):
         epoch_start = time.time()
@@ -267,21 +277,24 @@ def train(resume_checkpoint=None):
         scheduler.step()
         
         # Update metrics
-        metrics.update(train_loss, val_loss, train_acc, val_acc, current_lr)
+        # FIX: val_qwk sebelumnya tidak diteruskan ke sini -> tersimpan NaN
+        # -> menyebabkan "Best Val QWK: N/A" di ringkasan akhir.
+        metrics.update(train_loss, val_loss, train_acc, val_acc, current_lr, val_qwk=val_qwk)
         
         # Waktu per epoch
         epoch_time = time.time() - epoch_start
         
         # Print progress
-        qwk_str = f"{val_qwk:.4f}" if val_qwk is not None else "N/A"
         print(f"Epoch [{epoch+1}/{EPOCHS}] "
           f"| Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% "
-          f"| Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}% | Val QWK: {qwk_str} "
+          f"| Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}% | Val QWK: {val_qwk:.4f} "
           f"| LR: {current_lr:.2e} | Time: {epoch_time:.1f}s")
         
-        # Save best model
+        # Save best model (kriteria: Val QWK tertinggi)
         if val_qwk > best_val_qwk:
             best_val_qwk = val_qwk
+            best_val_loss = val_loss
+            best_val_acc = val_acc
             save_checkpoint(
                 model, optimizer, scheduler, epoch + 1,
                 val_loss, val_acc, val_qwk,
@@ -297,6 +310,11 @@ def train(resume_checkpoint=None):
         )
         
         # Early stopping check
+        # FIX: mode di EarlyStopping() sekarang "max" agar konsisten dengan
+        # metrik yang dipantau (val_qwk), sebelumnya mode="min" menyebabkan
+        # logika terbalik -- QWK yang terus naik malah dihitung sebagai
+        # "tidak ada improvement", sehingga training berhenti prematur
+        # (selalu di epoch yang sama setiap kali dijalankan ulang).
         if early_stopping(val_qwk):
             print(f"\nEarly stopping at epoch {epoch+1}")
             break
@@ -310,8 +328,7 @@ def train(resume_checkpoint=None):
     print(f"Best Epoch: {best_info['epoch']}")
     print(f"Best Val Accuracy: {best_info['val_accuracy']:.2f}%")
     print(f"Best Val Loss: {best_info['val_loss']:.4f}")
-    
-    #print(f"Best Val QWK: {best_info['val_qwk']:.4f}")
+
     if best_info["val_qwk"] is not None:
         print(f"Best Val QWK: {best_info['val_qwk']:.4f}")
     else:

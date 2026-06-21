@@ -27,6 +27,12 @@ class OrdinalCrossEntropyLoss(nn.Module):
         smoothing_strength: total massa probabilitas yang "dibagi" ke kelas lain (analog label_smoothing=0.1)
         ordinal_weight: bobot untuk komponen regresi ordinal (loss kedua). Mulai dari 0.3-0.5.
         ce_class_weighted: jika True, soft-CE juga di-weight oleh class_weights pada kelas target
+        ordinal_class_weighted: jika True, komponen regresi ordinal JUGA di-weight oleh class_weights.
+            PENTING jika dataloader Anda sudah memakai WeightedRandomSampler: kombinasi
+            sampler (yang sudah menyamakan frekuensi exposure tiap kelas per epoch) DAN
+            class_weights di loss bisa jadi double-compensation yang terlalu agresif.
+            Set False di sini untuk biarkan sampler menangani imbalance exposure, sementara
+            ordinal penalty murni fokus ke jarak kesalahan tanpa weighting tambahan.
     """
 
     def __init__(
@@ -37,6 +43,7 @@ class OrdinalCrossEntropyLoss(nn.Module):
         smoothing_strength: float = 0.1,
         ordinal_weight: float = 0.4,
         ce_class_weighted: bool = True,
+        ordinal_class_weighted: bool = True,
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -44,6 +51,7 @@ class OrdinalCrossEntropyLoss(nn.Module):
         self.smoothing_strength = smoothing_strength
         self.ordinal_weight = ordinal_weight
         self.ce_class_weighted = ce_class_weighted
+        self.ordinal_class_weighted = ordinal_class_weighted
 
         if class_weights is not None:
             self.register_buffer("class_weights", class_weights.float())
@@ -108,7 +116,7 @@ class OrdinalCrossEntropyLoss(nn.Module):
 
         ordinal_penalty = (expected_class - target_float).pow(2)  # (B,)
 
-        if self.class_weights is not None:
+        if self.ordinal_class_weighted and self.class_weights is not None:
             sample_w = self.class_weights.to(targets.device)[targets]
             ordinal_loss = (ordinal_penalty * sample_w).sum() / sample_w.sum()
         else:
@@ -116,3 +124,58 @@ class OrdinalCrossEntropyLoss(nn.Module):
 
         total_loss = ce_loss + self.ordinal_weight * ordinal_loss
         return total_loss
+
+
+# -----------------------------------------------------------------------------
+# INTEGRASI KE train.py ANDA
+# -----------------------------------------------------------------------------
+# Di train.py, bagian [3/5] Setting up training components, ganti:
+#
+#   criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
+#
+# menjadi:
+#
+#   from ordinal_loss import OrdinalCrossEntropyLoss
+#   criterion = OrdinalCrossEntropyLoss(
+#       num_classes=NUM_CLASSES,
+#       class_weights=class_weights,
+#       distance_power=2.0,
+#       smoothing_strength=0.1,
+#       ordinal_weight=0.4,
+#   ).to(DEVICE)
+#
+# Tidak ada perubahan lain yang diperlukan di train_one_epoch() atau validate()
+# karena criterion(outputs, labels) dipanggil dengan signature yang sama persis.
+# -----------------------------------------------------------------------------
+
+
+# -----------------------------------------------------------------------------
+# Contoh pemakaian -- ganti baris loss Anda yang sekarang
+# -----------------------------------------------------------------------------
+if __name__ == "__main__":
+    # SEBELUM (yang Anda pakai sekarang):
+    # criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
+
+    # SESUDAH:
+    class_weights = torch.tensor([0.3, 1.2, 0.8, 2.5, 1.5])  # contoh -- pakai weight Anda yang sebenarnya
+
+    criterion = OrdinalCrossEntropyLoss(
+        num_classes=5,
+        class_weights=class_weights,
+        distance_power=2.0,     # mulai dari 2.0, bisa coba 1.0 atau 1.5 juga
+        smoothing_strength=0.1, # sama seperti label_smoothing Anda sekarang
+        ordinal_weight=0.4,     # mulai dari 0.4, tuning antara 0.2 - 0.6
+    )
+
+    # dummy test
+    logits = torch.randn(8, 5, requires_grad=True)
+    targets = torch.tensor([0, 1, 2, 2, 3, 4, 1, 2])
+
+    loss = criterion(logits, targets)
+    print("Loss:", loss.item())
+    loss.backward()
+    print("Backward OK, grad norm:", logits.grad.norm().item())
+
+    # bandingkan dengan CE biasa untuk sanity check skala
+    ce_baseline = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
+    print("CE baseline (skala referensi):", ce_baseline(logits.detach(), targets).item())

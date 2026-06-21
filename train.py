@@ -238,9 +238,9 @@ def train(resume_checkpoint=None):
     print("\n[4/5] Starting training...")
     print_separator()
     
-    #best_val_acc = 0.0
-    #best_val_loss = float("inf")
-    best_val_qwk = 0.0
+    # best_val_acc = 0.0
+    # best_val_loss = float("inf")
+    best_val_qwk = -1.0
     
     for epoch in range(start_epoch, EPOCHS):
         epoch_start = time.time()
@@ -273,9 +273,10 @@ def train(resume_checkpoint=None):
         epoch_time = time.time() - epoch_start
         
         # Print progress
+        qwk_str = f"{val_qwk:.4f}" if val_qwk is not None else "N/A"
         print(f"Epoch [{epoch+1}/{EPOCHS}] "
           f"| Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% "
-          f"| Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}% | Val QWK: {val_qwk:.4f} "
+          f"| Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}% | Val QWK: {qwk_str} "
           f"| LR: {current_lr:.2e} | Time: {epoch_time:.1f}s")
         
         # Save best model
@@ -309,7 +310,13 @@ def train(resume_checkpoint=None):
     print(f"Best Epoch: {best_info['epoch']}")
     print(f"Best Val Accuracy: {best_info['val_accuracy']:.2f}%")
     print(f"Best Val Loss: {best_info['val_loss']:.4f}")
-    print(f"Best Val QWK: {best_info['val_qwk']:.4f}")
+    
+    #print(f"Best Val QWK: {best_info['val_qwk']:.4f}")
+    if best_info["val_qwk"] is not None:
+        print(f"Best Val QWK: {best_info['val_qwk']:.4f}")
+    else:
+        print("Best Val QWK: N/A")
+
     print(f"Best Train Accuracy: {best_info['train_accuracy']:.2f}%")
     print(f"Best Train Loss: {best_info['train_loss']:.4f}")
     

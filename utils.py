@@ -53,14 +53,19 @@ def save_checkpoint(model, optimizer, scheduler, epoch, val_loss,
         val_qwk (float, optional): Validation Quadratic Weighted Kappa
         filepath (str): Path untuk menyimpan checkpoint
     """
+    # PENTING: paksa semua nilai numerik jadi Python primitif murni (int/float),
+    # bukan numpy scalar (np.float64, np.int64, dst). PyTorch >=2.6 default
+    # torch.load(weights_only=True) MENOLAK unpickle numpy scalar di dalam
+    # checkpoint dict (error "Unsupported global: numpy._core.multiarray.scalar"),
+    # meski isinya cuma angka biasa. int()/float() di sini menghindarinya sejak awal.
     checkpoint = {
-        "epoch": epoch,
+        "epoch": int(epoch),
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "scheduler_state_dict": scheduler.state_dict() if scheduler else None,
-        "val_loss": val_loss,
-        "val_accuracy": val_accuracy,
-        "val_qwk": val_qwk,
+        "val_loss": float(val_loss),
+        "val_accuracy": float(val_accuracy),
+        "val_qwk": float(val_qwk) if val_qwk is not None else None,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     
@@ -83,7 +88,16 @@ def load_checkpoint(filepath, model, optimizer=None, scheduler=None, device="cpu
     Returns:
         dict: Informasi checkpoint
     """
-    checkpoint = torch.load(filepath, map_location=device, weights_only=True)
+    try:
+        checkpoint = torch.load(filepath, map_location=device, weights_only=True)
+    except Exception as e:
+        # Checkpoint lama (sebelum fix numpy-scalar) bisa berisi tipe seperti
+        # numpy.float64 yang ditolak weights_only=True di PyTorch >=2.6.
+        # Fallback ke weights_only=False -- AMAN di sini karena file ini hasil
+        # save_checkpoint() kita sendiri, bukan checkpoint dari sumber pihak ketiga.
+        print(f"[CHECKPOINT] weights_only=True gagal ({type(e).__name__}), "
+              f"mencoba ulang dengan weights_only=False (checkpoint lama)...")
+        checkpoint = torch.load(filepath, map_location=device, weights_only=False)
     
     model.load_state_dict(checkpoint["model_state_dict"])
     

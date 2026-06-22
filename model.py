@@ -189,7 +189,17 @@ def load_model_for_inference(checkpoint_path, model_name="mvitv2_tiny",
         img_size=img_size
     )
     
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    try:
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    except Exception as e:
+        # Checkpoint lama (sebelum fix numpy-scalar di save_checkpoint) bisa berisi
+        # tipe seperti numpy.float64 yang ditolak weights_only=True di PyTorch >=2.6
+        # (error: "Unsupported global: numpy._core.multiarray.scalar").
+        # Fallback ke weights_only=False -- AMAN karena file ini hasil training kita
+        # sendiri, bukan checkpoint dari sumber tidak dikenal.
+        print(f"[MODEL] weights_only=True gagal ({type(e).__name__}), "
+              f"mencoba ulang dengan weights_only=False (checkpoint lama)...")
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     
     # Handle checkpoint yang berisi state_dict di dalam dict
     if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
@@ -205,6 +215,7 @@ def load_model_for_inference(checkpoint_path, model_name="mvitv2_tiny",
     model.eval()
     
     return model
+
 
 if __name__ == "__main__":
     """Test model creation."""

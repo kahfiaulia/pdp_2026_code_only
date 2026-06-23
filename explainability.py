@@ -4,7 +4,7 @@ Deteksi Retinopati Diabetik dengan MViTv2
 
 Implementasi tiga metode explainability:
 1. Grad-CAM++ - Lokalisasi area retina yang berkontribusi dominan
-2. LRP (Layer-wise Relevance Propagation) - Pemetaan kontribusi piksel
+2. DeepLIFT (Deep Learning Important FeaTures) - Pemetaan kontribusi piksel
 3. Integrated Gradients - Analisis sensitivitas input
 
 Pendekatan hibrida: ketiga metode saling melengkapi untuk menghasilkan
@@ -161,18 +161,21 @@ class GradCAMPlusPlus:
 
 
 # ============================================================
-# 2. LAYER-WISE RELEVANCE PROPAGATION (LRP)
+# 2. DeepLIFT (Deep Learning Important FeaTures)
 # ============================================================
 
-def compute_lrp(model, input_tensor, target_class=None, device="cpu"):
+def compute_deeplift(model, input_tensor, target_class=None, device="cpu"):
     """
-    Compute Layer-wise Relevance Propagation (LRP).
+    Compute DeepLIFT (Deep Learning Important FeaTures).
     
-    LRP memetakan kontribusi relevansi dari output kembali ke input,
-    sehingga setiap piksel mendapat skor relevansi yang menunjukkan
-    seberapa besar kontribusinya terhadap keputusan model.
+    DeepLIFT membandingkan aktivasi setiap neuron terhadap aktivasi referensi
+    (baseline), kemudian menetapkan skor kontribusi ke setiap piksel input
+    berdasarkan perbedaan tersebut.
     
     Menggunakan Captum library.
+    
+    Referensi: Shrikumar et al., "Learning Important Features Through
+    Propagating Activation Differences"
     
     Args:
         model: Model PyTorch
@@ -181,9 +184,9 @@ def compute_lrp(model, input_tensor, target_class=None, device="cpu"):
         device: Device
     
     Returns:
-        numpy.ndarray: Relevance map [H, W]
+        numpy.ndarray: Attribution map [H, W]
     """
-    from captum.attr import LRP as CaptumLRP
+    from captum.attr import DeepLift
     
     model.eval()
     input_tensor = input_tensor.to(device)
@@ -195,9 +198,10 @@ def compute_lrp(model, input_tensor, target_class=None, device="cpu"):
             target_class = output.argmax(dim=1).item()
     
     try:
-        lrp = CaptumLRP(model)
-        attribution = lrp.attribute(
+        deeplift = DeepLift(model)
+        attribution = deeplift.attribute(
             input_tensor,
+            baselines=torch.zeros_like(input_tensor).to(device),
             target=target_class
         )
         
@@ -216,7 +220,7 @@ def compute_lrp(model, input_tensor, target_class=None, device="cpu"):
         return attr_map
     
     except Exception as e:
-        print(f"[WARNING] LRP gagal: {e}")
+        print(f"[WARNING] DeepLIFT gagal: {e}")
         print("[WARNING] Menggunakan Simple Gradient sebagai fallback")
         return compute_simple_gradient(model, input_tensor, target_class, device)
 
@@ -226,7 +230,7 @@ def compute_simple_gradient(model, input_tensor, target_class=None, device="cpu"
     Fallback: Simple Gradient Attribution.
     
     Menghitung gradient dari output terhadap input sebagai
-    proxy untuk relevance map jika LRP gagal.
+    proxy untuk attribution map jika DeepLIFT gagal.
     
     Args:
         model: Model PyTorch
@@ -367,7 +371,7 @@ def visualize_single_sample(image_tensor, model, predicted_class, true_class,
     Visualisasi explainability untuk satu sampel dengan ketiga metode.
     
     Menghasilkan figure dengan layout:
-    - Baris 1: Gambar Asli | Grad-CAM++ | LRP | Integrated Gradients
+    - Baris 1: Gambar Asli | Grad-CAM++ | DeepLIFT | Integrated Gradients
     - Baris 2: Overlay per metode
     
     Args:
@@ -395,10 +399,10 @@ def visualize_single_sample(image_tensor, model, predicted_class, true_class,
     gradcam = GradCAMPlusPlus(model, target_layer)
     gradcam_map = gradcam.generate(image_tensor, target_class=predicted_class)
     
-    # 2. LRP
-    print(f"  Computing LRP...")
-    lrp_map = compute_lrp(model, image_tensor, target_class=predicted_class, 
-                           device=device)
+    # 2. DeepLIFT
+    print(f"  Computing DeepLIFT...")
+    deeplift_map = compute_deeplift(model, image_tensor, target_class=predicted_class, 
+                                    device=device)
     
     # 3. Integrated Gradients
     print(f"  Computing Integrated Gradients...")
@@ -436,10 +440,10 @@ def visualize_single_sample(image_tensor, model, predicted_class, true_class,
     ax2.axis("off")
     plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
     
-    # LRP
+    # DeepLIFT
     ax3 = fig.add_subplot(gs[0, 2])
-    im3 = ax3.imshow(lrp_map, cmap=EXPLAIN_COLORMAP, vmin=0, vmax=1)
-    ax3.set_title("LRP\n(Kontribusi Piksel)", fontsize=12, fontweight='bold')
+    im3 = ax3.imshow(deeplift_map, cmap=EXPLAIN_COLORMAP, vmin=0, vmax=1)
+    ax3.set_title("DeepLIFT\n(Kontribusi Piksel)", fontsize=12, fontweight='bold')
     ax3.axis("off")
     plt.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04)
     
@@ -464,9 +468,9 @@ def visualize_single_sample(image_tensor, model, predicted_class, true_class,
     ax6.axis("off")
     
     ax7 = fig.add_subplot(gs[1, 2])
-    overlay_lrp = create_heatmap_overlay(orig_image, lrp_map)
-    ax7.imshow(overlay_lrp)
-    ax7.set_title("Overlay LRP", fontsize=12)
+    overlay_deeplift = create_heatmap_overlay(orig_image, deeplift_map)
+    ax7.imshow(overlay_deeplift)
+    ax7.set_title("Overlay DeepLIFT", fontsize=12)
     ax7.axis("off")
     
     ax8 = fig.add_subplot(gs[1, 3])
@@ -487,7 +491,7 @@ def visualize_single_sample(image_tensor, model, predicted_class, true_class,
     
     return {
         "gradcam": gradcam_map,
-        "lrp": lrp_map,
+        "deeplift": deeplift_map,
         "ig": ig_map
     }
 
@@ -498,7 +502,7 @@ def visualize_comparison_grid(image_tensor, model, predicted_class, true_class,
     """
     Visualisasi perbandingan ringkas dalam satu baris.
     
-    Layout: Original | Grad-CAM++ | LRP | IG | Combined
+    Layout: Original | Grad-CAM++ | DeepLIFT | IG | Combined
     
     Args:
         image_tensor: Input tensor
@@ -519,22 +523,22 @@ def visualize_comparison_grid(image_tensor, model, predicted_class, true_class,
     # Gunakan precomputed maps jika ada untuk menghemat waktu
     if precomputed_maps:
         gradcam_map = precomputed_maps["gradcam"]
-        lrp_map = precomputed_maps["lrp"]
+        deeplift_map = precomputed_maps["deeplift"]
         ig_map = precomputed_maps["ig"]
     else:
         # Generate attributions
         target_layer = model.get_target_layer()
         gradcam = GradCAMPlusPlus(model, target_layer)
         gradcam_map = gradcam.generate(image_tensor, target_class=predicted_class)
-        lrp_map = compute_lrp(model, image_tensor, target_class=predicted_class, 
-                               device=device)
+        deeplift_map = compute_deeplift(model, image_tensor, target_class=predicted_class, 
+                                         device=device)
         ig_map = compute_integrated_gradients(
             model, image_tensor, target_class=predicted_class,
             n_steps=EXPLAIN_IG_STEPS, device=device
         )
     
     # Combined: rata-rata ketiga metode
-    combined = (gradcam_map + lrp_map + ig_map) / 3.0
+    combined = (gradcam_map + deeplift_map + ig_map) / 3.0
     if combined.max() > 0:
         combined = combined / (combined.max() + 1e-8)
     
@@ -552,9 +556,9 @@ def visualize_comparison_grid(image_tensor, model, predicted_class, true_class,
                       fontsize=11)
     axes[1].axis("off")
     
-    overlay_lrp = create_heatmap_overlay(orig_image, lrp_map)
-    axes[2].imshow(overlay_lrp)
-    axes[2].set_title("LRP", fontsize=11)
+    overlay_deeplift = create_heatmap_overlay(orig_image, deeplift_map)
+    axes[2].imshow(overlay_deeplift)
+    axes[2].set_title("DeepLIFT", fontsize=11)
     axes[2].axis("off")
     
     overlay_ig = create_heatmap_overlay(orig_image, ig_map)
@@ -579,7 +583,7 @@ def visualize_comparison_grid(image_tensor, model, predicted_class, true_class,
     if device.type == 'cuda':
         torch.cuda.empty_cache()
     
-    return {"gradcam": gradcam_map, "lrp": lrp_map, "ig": ig_map, "combined": combined}
+    return {"gradcam": gradcam_map, "deeplift": deeplift_map, "ig": ig_map, "combined": combined}
 
 
 # ============================================================

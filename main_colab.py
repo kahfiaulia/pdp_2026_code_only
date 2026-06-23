@@ -136,10 +136,10 @@ def setup_dataset_kaggle():
         print(f"[COLAB] Dataset sudah ada di {dataset_dir}, skip download.")
         return dataset_dir
 
-    # ---- Install kaggle CLI terlebih dahulu ----
-    print("[COLAB] Menginstall Kaggle CLI...")
+    # ---- Install/upgrade kaggle CLI ke versi terbaru (perlu ≥1.6 untuk auth login) ----
+    print("[COLAB] Menginstall/upgrade Kaggle CLI...")
     subprocess.check_call(
-        [sys.executable, "-m", "pip", "install", "-q", "kaggle"]
+        [sys.executable, "-m", "pip", "install", "-q", "--upgrade", "kaggle"]
     )
 
     # ---- Cek apakah sudah terautentikasi ----

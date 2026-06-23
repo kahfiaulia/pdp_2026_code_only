@@ -135,6 +135,8 @@ CLASS_LABELS = {i: name for i, name in enumerate(CLASS_NAMES)}
 EXPLAIN_NUM_SAMPLES = 5        # Jumlah sampel per kelas untuk explainability
 EXPLAIN_IG_STEPS = 50          # Jumlah steps untuk Integrated Gradients
 EXPLAIN_COLORMAP = "jet"       # Colormap untuk heatmap
+EXPLAIN_OCCLUSION_WINDOW = 50  # Ukuran sliding window (piksel) untuk Occlusion
+EXPLAIN_OCCLUSION_STRIDE = 8   # Stride sliding window untuk Occlusion
 
 # ============================================================
 # IMAGENET NORMALIZATION

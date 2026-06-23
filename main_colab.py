@@ -9,7 +9,7 @@ Jalankan di Google Colab Notebook (GPU):
     !python main_colab.py --source kaggle --mode train
 
 Sumber dataset yang didukung:
-  --source kaggle  : Download otomatis dari Kaggle (perlu upload kaggle.json)
+  --source kaggle  : Download otomatis dari Kaggle (autentikasi via OAuth login)
   --source drive   : Mount Google Drive & gunakan dataset dari folder Drive
 
 Mode yang tersedia:
@@ -126,7 +126,7 @@ def _resolve_csv(dataset_dir, split):
 def setup_dataset_kaggle():
     """
     Download dataset APTOS 2019 dari Kaggle menggunakan Kaggle API.
-    Pengguna harus upload kaggle.json terlebih dahulu.
+    Autentikasi via OAuth login (kaggle auth login) — tidak perlu upload kaggle.json.
     """
     dataset_dir = COLAB_DATASET_BASE
 
@@ -136,39 +136,32 @@ def setup_dataset_kaggle():
         print(f"[COLAB] Dataset sudah ada di {dataset_dir}, skip download.")
         return dataset_dir
 
-    print("[COLAB] Menyiapkan Kaggle API...")
-
-    # Cek apakah kaggle.json sudah ada
-    kaggle_dir = os.path.expanduser("~/.kaggle")
-    kaggle_json = os.path.join(kaggle_dir, "kaggle.json")
-
-    if not os.path.exists(kaggle_json):
-        if _is_colab():
-            print("[COLAB] Upload file kaggle.json Anda...")
-            from google.colab import files
-
-            uploaded = files.upload()
-            if "kaggle.json" in uploaded:
-                os.makedirs(kaggle_dir, exist_ok=True)
-                with open(kaggle_json, "wb") as f:
-                    f.write(uploaded["kaggle.json"])
-                os.chmod(kaggle_json, 0o600)
-                print("[COLAB] kaggle.json berhasil disimpan.")
-            else:
-                print("[ERROR] File kaggle.json tidak ditemukan dalam upload.")
-                sys.exit(1)
-        else:
-            print(f"[ERROR] kaggle.json tidak ditemukan di {kaggle_json}")
-            print("  Letakkan file kaggle.json dari akun Kaggle Anda di ~/.kaggle/")
-            sys.exit(1)
-
-    # Install kaggle CLI jika belum ada
+    # ---- Install kaggle CLI terlebih dahulu ----
+    print("[COLAB] Menginstall Kaggle CLI...")
     subprocess.check_call(
         [sys.executable, "-m", "pip", "install", "-q", "kaggle"]
     )
 
-    # Download dataset
-    print(f"[COLAB] Mendownload dataset '{KAGGLE_DATASET_SLUG}'...")
+    # ---- Cek apakah sudah terautentikasi ----
+    kaggle_dir = os.path.expanduser("~/.kaggle")
+    kaggle_json = os.path.join(kaggle_dir, "kaggle.json")
+
+    if not os.path.exists(kaggle_json):
+        print("\n[COLAB] Kaggle belum terautentikasi.")
+        print("[COLAB] Menjalankan 'kaggle auth login' — ikuti instruksi di browser...\n")
+        try:
+            subprocess.check_call(["kaggle", "auth", "login"])
+            print("\n[COLAB] Autentikasi Kaggle berhasil!")
+        except subprocess.CalledProcessError:
+            print("\n[ERROR] Autentikasi Kaggle gagal.")
+            print("  Pastikan Anda mengikuti instruksi OAuth di browser.")
+            print("  Alternatif: letakkan kaggle.json secara manual di ~/.kaggle/kaggle.json")
+            sys.exit(1)
+    else:
+        print(f"[COLAB] Kaggle sudah terautentikasi (ditemukan {kaggle_json}).")
+
+    # ---- Download dataset ----
+    print(f"\n[COLAB] Mendownload dataset '{KAGGLE_DATASET_SLUG}'...")
     os.makedirs(dataset_dir, exist_ok=True)
     subprocess.check_call([
         "kaggle", "datasets", "download",

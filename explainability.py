@@ -372,7 +372,7 @@ def create_heatmap_overlay(image, heatmap, colormap=EXPLAIN_COLORMAP, alpha=0.5)
         heatmap = cv2.resize(heatmap, (image.shape[1], image.shape[0]))
     
     # Terapkan colormap
-    cmap = plt.cm.get_cmap(colormap)
+    cmap = plt.get_cmap(colormap)
     heatmap_colored = cmap(heatmap)[:, :, :3]  # [H, W, 3]
     
     # Overlay

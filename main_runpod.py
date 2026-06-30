@@ -32,7 +32,7 @@ import sys
 
 # Sesuaikan dua path ini sesuai struktur folder kamu di pod / Network Volume
 RUNPOD_DATASET_DIR = "/workspace/datasets/aptos2019"
-RUNPOD_WORKING_DIR = "/workspace/outputs"
+RUNPOD_WORKING_DIR = "/workspace"
 
 
 def _first_existing(*paths):
